@@ -17,8 +17,48 @@ from pathlib import PurePath as p
 from shutil import move
 from time import sleep, time
 
+import sys
+import ctypes
+import math
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Declare global variables
+
+class Logger(object):
+    def __init__(self):
+        self.terminal = sys.stdout
+        self.log = open("/tmp/shuz-handycon.log", "a", 1)
+   
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)  
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+
+    def close(self):
+        self.terminal.close()
+        self.log.close()
+
+sys.stdout = Logger()
+
+def sprintCStruct(s, indent = "    "):
+    out = ""
+    effect_type = None
+    for field in s._fields_:
+        value = getattr(s, field[0])
+        if field[0] == "type":
+            effect_type = value
+        if isinstance(value, ctypes.Structure):
+            value = "\n" + sprintCStruct(value, indent + indent)
+        if isinstance(value, ctypes.Union):
+            if effect_type == e.FF_RUMBLE:
+                value = "\n" + sprintCStruct(getattr(value, 'ff_rumble_effect'), indent + indent)
+            else:
+                value = "(unsupported effect)"
+        out += indent + str(field[0]) + ": " + str(value) + "\n"
+    return out
 
 # Constants
 EVENT_OSK = [[e.EV_KEY, e.BTN_MODE], [e.EV_KEY, e.BTN_NORTH]]
@@ -205,11 +245,6 @@ CONTROLLER_EVENTS = {
     ],
     e.EV_FF: [
         e.FF_RUMBLE,
-        e.FF_PERIODIC,
-        e.FF_SQUARE,
-        e.FF_TRIANGLE,
-        e.FF_SINE,
-        e.FF_GAIN,
     ],
 }
 
@@ -467,7 +502,7 @@ def make_controller():
             version=int('110', base=16)
             )
 
-async def do_rumble(button=0, interval=10, length=1000, delay=0):
+async def do_rumble(button=0, interval=10, length=1000, delay=0, strong_magnitude=0x0000, weak_magnitude=0xffff):
     global controller_device
 
     # Prevent look crash if controller_device was taken.
@@ -475,7 +510,7 @@ async def do_rumble(button=0, interval=10, length=1000, delay=0):
         return
 
     # Create the rumble effect.
-    rumble = ff.Rumble(strong_magnitude=0x0000, weak_magnitude=0xffff)
+    rumble = ff.Rumble(strong_magnitude=strong_magnitude, weak_magnitude=weak_magnitude)
     effect = ff.Effect(
         e.FF_RUMBLE,
         -1,
@@ -831,6 +866,7 @@ async def capture_ff_events():
 
         if event.type == e.EV_FF:
             # Forward FF event to controller.
+            #print("EV_FF", event.type, event.code, event.value)
             controller_device.write(e.EV_FF, event.code, event.value)
             continue
 
@@ -845,12 +881,34 @@ async def capture_ff_events():
             upload = ui_device.begin_upload(event.value)
             effect = upload.effect
 
+            #print("UI_FF_UPLOAD effect", sprintCStruct(effect))
+
             if effect.id not in ff_effect_id_set:
                 effect.id = -1 # set to -1 for kernel to allocate a new id. all other values throw an error for invalid input.
 
+            internal_effect = effect
+            if effect.type == e.FF_RUMBLE:
+                try:
+                    rumble_effect = getattr(getattr(effect, 'u'), 'ff_rumble_effect')
+                    new_rumble = ff.Rumble(
+                        strong_magnitude=math.ceil(getattr(rumble_effect, 'strong_magnitude') / 100), 
+                        weak_magnitude=math.ceil(getattr(rumble_effect, 'weak_magnitude') / 10)
+                    )
+                    internal_effect = ff.Effect(
+                        e.FF_RUMBLE,
+                        effect.id,
+                        getattr(effect, 'direction'),
+                        getattr(effect, 'ff_trigger'),
+                        getattr(effect, 'ff_replay'),
+                        ff.EffectType(ff_rumble_effect=new_rumble)
+                    )
+                except Exception as err:
+                    print("Error reconfiguring effect: ", err)
+
+            print("UI_FF_UPLOAD effect internal", sprintCStruct(internal_effect))
             try:
                 # Upload to the actual controller.
-                effect_id = controller_device.upload_effect(effect)
+                effect_id = controller_device.upload_effect(internal_effect)
                 effect.id = effect_id
 
                 ff_effect_id_set.add(effect_id)
@@ -864,6 +922,8 @@ async def capture_ff_events():
 
         elif event.code == e.UI_FF_ERASE:
             erase = ui_device.begin_erase(event.value)
+
+            #print("UI_FF_ERASE", event.type, event.code, event.value, erase.effect_id)
 
             try:
                 controller_device.erase_effect(erase.effect_id)
