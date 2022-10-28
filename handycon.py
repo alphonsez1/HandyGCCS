@@ -325,8 +325,13 @@ def id_system():
             "ONEXPLAYER GUNDAM GA72",
             "ONEXPLAYER 2 ARP23",
             ]:
-
             system_type = "OXP"
+    # AOKZOE devices. 
+    # AOKZOE comes from the ONE XPLAYER 
+    elif system_id in [
+            "AOKZOE A1 AR07",
+            ]:
+            system_type = "AOK"
 
     # Block devices that aren't supported as this could cause issues.
     else:
@@ -660,6 +665,46 @@ async def capture_keyboard_events():
                                 event_queue.append(button5)
                             elif active == [] and seed_event.code in [34, 125] and button_on == 0 and button5 in event_queue:
                                 this_button = button5
+
+                            # Handle L_META from power button
+                            elif active == [] and seed_event.code == 125 and button_on == 0 and  event_queue == [] and shutdown == True:
+                                shutdown = False
+
+                        case "AOK":
+                            # BUTTON 1 (Turbo button can't used) 
+
+
+                            # BUTTON 2 (Default: QAM) Long press yellow
+                            if active == [34, 125] and button_on == 1 and button2 not in event_queue:
+                                event_queue.append(button2)
+                            elif active == [] and seed_event.code in [34, 125] and button_on == 0 and button2 in event_queue:
+                                this_button = button2
+
+                            # BUTTON 3 (Default: Toggle Gyro) Short press yellow + keyboard
+                            if active == [24, 97, 125] and button_on == 1 and button3 not in event_queue and gyro_device:
+                                event_queue.append(button3)
+                            elif active == [] and seed_event.code in [32, 125] and button_on == 0 and button3 in event_queue and gyro_device:
+                                event_queue.remove(button3)
+                                gyro_enabled = not gyro_enabled
+                                if gyro_enabled:
+                                    await do_rumble(0, 250, 1000, 0)
+                                else:
+                                    await do_rumble(0, 100, 1000, 0)
+                                    await asyncio.sleep(.2)
+                                    await do_rumble(0, 100, 1000, 0)
+
+                            # BUTTON 4 (Default: OSK) Short press keyboard
+                            if active == [24, 97, 125] and button_on == 1 and button4 not in event_queue:
+                                event_queue.append(button4)
+                            elif active == [] and seed_event.code in [24, 97, 125] and button_on == 0 and button4 in event_queue:
+                                this_button = button4
+
+                            # BUTTON 5 (Default: Home) Short press yellow
+                            if active == [32, 125] and button_on == 1 and button5 not in event_queue:
+                                event_queue.append(button5)
+                            elif active == [] and seed_event.code in [32, 125] and button_on == 0 and button5 in event_queue:
+                                this_button = button5
+                                await do_rumble(0, 150, 1000, 0)
 
                             # Handle L_META from power button
                             elif active == [] and seed_event.code == 125 and button_on == 0 and  event_queue == [] and shutdown == True:
