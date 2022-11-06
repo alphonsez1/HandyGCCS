@@ -330,6 +330,7 @@ def id_system():
     # AOKZOE comes from the ONE XPLAYER 
     elif system_id in [
             "AOKZOE A1 AR07",
+            "ONEXPLAYER Mini Pro",
             ]:
             system_type = "AOK"
 
